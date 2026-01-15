@@ -1,0 +1,18 @@
+{
+  "parameters": {
+    "method": "POST",
+    "url": "https://jarvis.ieshlanz.es/api/generate",
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={\n  \"model\": \"deepseek-coder:6.7b\",\n  \"prompt\": \"Eres un profesor de JS. Evalúa este código del alumno {{ $('Google Drive Trigger').item.json.name }}:\\n\\n{{ $('Descargar Archivo').item.binary.data.toText() }}\\n\\nResponde exclusivamente en formato JSON con estas claves: puntuacion, feedback.\",\n  \"stream\": false,\n  \"format\": \"json\"\n}",
+    "options": {}
+  },
+  "id": "e9c1685e-3f30-4f17-a8e8-9008e578080b",
+  "name": "IA Jarvis",
+  "type": "n8n-nodes-base.httpRequest",
+  "typeVersion": 4.1,
+  "position": [
+    224,
+    -240
+  ]
+}

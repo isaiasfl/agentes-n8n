@@ -1,0 +1,103 @@
+{
+  "name": "Corrector Automático Masivo - Drive",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "event": "fileCreated",
+        "folderId": "13qItt9zKxbvEr2Vit8wvK0NkYVF25c3d",
+        "options": {
+          "filter": "name contains '.js'"
+        }
+      },
+      "id": "e4f36ac4-9ca5-4489-b09b-003f2fb7e9bc",
+      "name": "Google Drive Trigger",
+      "type": "n8n-nodes-base.googleDriveTrigger",
+      "typeVersion": 1,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "fileId": "={{ $json.id }}"
+      },
+      "id": "f5f36ac4-9ca5-4489-b09b-003f2fb7e9bd",
+      "name": "Descargar Archivo",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [220, 0],
+      "credentials": {
+        "googleDriveOAuth2Api": { "id": "TU_CREDencial_AQUÍ" }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://jarvis.ieshlanz.es/api/generate",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "deepseek-coder:6.7b"
+            },
+            {
+              "name": "prompt",
+              "value": "=Eres un profesor de JS. Evalúa este código del alumno {{ $node[\"Google Drive Trigger\"].json.name }}:\n\n{{ $json.data.base64Decode() }}\n\nResponde solo en JSON con: puntuacion (0-10), feedback."
+            },
+            {
+              "name": "stream",
+              "value": "false"
+            }
+          ]
+        }
+      },
+      "id": "g6f36ac4-9ca5-4489-b09b-003f2fb7e9be",
+      "name": "IA Jarvis",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [440, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "for (const item of $input.all()) {\n  const evaluation = JSON.parse(item.json.response);\n  const fileName = $node[\"Google Drive Trigger\"].json.name;\n  \n  item.json = {\n    estudiante: fileName.replace('.js', ''),\n    puntuacion: evaluation.puntuacion,\n    feedback: evaluation.feedback,\n    fecha: new Date().toISOString()\n  };\n}\nreturn $input.all();"
+      },
+      "id": "h7f36ac4-9ca5-4489-b09b-003f2fb7e9bf",
+      "name": "Procesar Datos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 0]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": "TU_ID_DE_SHEET_AQUÍ",
+        "sheetName": "Sheet1",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Estudiante": "={{ $json.estudiante }}",
+            "Nota": "={{ $json.puntuacion }}",
+            "Comentarios": "={{ $json.feedback }}"
+          }
+        }
+      },
+      "id": "i8f36ac4-9ca5-4489-b09b-003f2fb7e9c0",
+      "name": "Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [880, 0]
+    }
+  ],
+  "connections": {
+    "Google Drive Trigger": { "main": [[{ "node": "Descargar Archivo", "type": "main", "index": 0 }]] },
+    "Descargar Archivo": { "main": [[{ "node": "IA Jarvis", "type": "main", "index": 0 }]] },
+    "IA Jarvis": { "main": [[{ "node": "Procesar Datos", "type": "main", "index": 0 }]] },
+    "Procesar Datos": { "main": [[{ "node": "Google Sheets", "type": "main", "index": 0 }]] }
+  }
+}

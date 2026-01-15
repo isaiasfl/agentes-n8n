@@ -1,0 +1,153 @@
+{
+  "name": "✅ Corrección Automática - FUNCIONAL",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "codigo-estudiante",
+        "options": {}
+      },
+      "id": "webhook",
+      "name": "📥 Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 400],
+      "webhookId": "codigo-estudiante"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "nombre",
+              "value": "={{ $json.body.nombre }}",
+              "type": "string"
+            },
+            {
+              "id": "a2",
+              "name": "email",
+              "value": "={{ $json.body.email }}",
+              "type": "string"
+            },
+            {
+              "id": "a3",
+              "name": "codigo",
+              "value": "={{ $json.body.codigo }}",
+              "type": "string"
+            },
+            {
+              "id": "a4",
+              "name": "ejercicio",
+              "value": "={{ $json.body.ejercicio_id }}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "extraer",
+      "name": "🔍 Extraer",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [460, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://jarvis.ieshlanz.es/api/generate",
+        "authentication": "none",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"deepseek-coder:6.7b\",\n  \"prompt\": \"Eres profesor de programación. Analiza este código JavaScript del estudiante {{ $json.nombre }} para el ejercicio {{ $json.ejercicio }}.\\n\\nCÓDIGO:\\n{{ $json.codigo }}\\n\\nResponde SOLO con este JSON (sin markdown, sin explicaciones):\\n{\\n  \\\"puntuacion\\\": 8,\\n  \\\"aspectos_positivos\\\": [\\\"Buena nomenclatura\\\", \\\"Código limpio\\\"],\\n  \\\"errores\\\": [\\\"Falta validación\\\"],\\n  \\\"sugerencias\\\": [\\\"Añadir try-catch\\\", \\\"Documentar con JSDoc\\\"],\\n  \\\"comentario\\\": \\\"Buen trabajo en general\\\"\\n}\\n\\nCriterios: Funcionalidad(3pts), Calidad(2pts), Buenas prácticas(2pts), Errores(1pt), Eficiencia(1pt), Legibilidad(1pt). Responde SOLO JSON.\",\n  \"stream\": false,\n  \"options\": {\n    \"temperature\": 0.3\n  }\n}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "ollama",
+      "name": "🤖 Ollama HTTP",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parsear respuesta de Ollama\nconst ollamaData = $input.first().json;\nconst responseText = ollamaData.response;\n\nlet analisis;\n\ntry {\n  // Limpiar markdown si existe\n  let clean = responseText\n    .replace(/```json/g, '')\n    .replace(/```/g, '')\n    .trim();\n  \n  // Extraer JSON\n  const match = clean.match(/\\{[\\s\\S]*\\}/);\n  if (match) {\n    analisis = JSON.parse(match[0]);\n  } else {\n    analisis = JSON.parse(clean);\n  }\n  \n  // Validar estructura mínima\n  if (!analisis.puntuacion) {\n    throw new Error('JSON sin puntuacion');\n  }\n  \n} catch (error) {\n  console.error('Error parseando:', error);\n  // Fallback\n  analisis = {\n    puntuacion: 5,\n    aspectos_positivos: [\"Código recibido correctamente\"],\n    errores: [\"No se pudo analizar automáticamente\"],\n    sugerencias: [\"Revisar manualmente\"],\n    comentario: \"Error técnico en análisis automático\"\n  };\n}\n\n// Obtener datos previos\nconst datosEstudiante = $('🔍 Extraer').first().json;\n\n// Resultado final\nreturn {\n  json: {\n    // Datos estudiante\n    nombre: datosEstudiante.nombre,\n    email: datosEstudiante.email,\n    ejercicio: datosEstudiante.ejercicio,\n    codigo: datosEstudiante.codigo,\n    \n    // Análisis IA\n    puntuacion: analisis.puntuacion,\n    aspectos_positivos: analisis.aspectos_positivos || [],\n    errores: analisis.errores || [],\n    sugerencias: analisis.sugerencias || [],\n    comentario: analisis.comentario || \"\",\n    \n    // Campos calculados\n    fecha: new Date().toISOString(),\n    aprobado: analisis.puntuacion >= 5,\n    estado: analisis.puntuacion >= 5 ? \"APROBADO\" : \"SUSPENDIDO\"\n  }\n};"
+      },
+      "id": "procesar",
+      "name": "⚙️ Procesar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.aprobado }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "condicion",
+      "name": "❓ ¿Aprobado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.1,
+      "position": [1120, 400]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"estudiante\": \"{{ $json.nombre }}\",\n  \"ejercicio\": \"{{ $json.ejercicio }}\",\n  \"puntuacion\": {{ $json.puntuacion }},\n  \"aprobado\": {{ $json.aprobado }},\n  \"estado\": \"{{ $json.estado }}\",\n  \"mensaje\": \"Análisis completado\"\n}",
+        "options": {}
+      },
+      "id": "respuesta",
+      "name": "✅ Responder",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1340, 400]
+    }
+  ],
+  "connections": {
+    "📥 Webhook": {
+      "main": [[{"node": "🔍 Extraer", "type": "main", "index": 0}]]
+    },
+    "🔍 Extraer": {
+      "main": [[{"node": "🤖 Ollama HTTP", "type": "main", "index": 0}]]
+    },
+    "🤖 Ollama HTTP": {
+      "main": [[{"node": "⚙️ Procesar", "type": "main", "index": 0}]]
+    },
+    "⚙️ Procesar": {
+      "main": [[{"node": "❓ ¿Aprobado?", "type": "main", "index": 0}]]
+    },
+    "❓ ¿Aprobado?": {
+      "main": [
+        [{"node": "✅ Responder", "type": "main", "index": 0}],
+        [{"node": "✅ Responder", "type": "main", "index": 0}]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2026-01-14T00:00:00.000Z",
+  "versionId": "1"
+}

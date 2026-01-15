@@ -1,0 +1,255 @@
+{
+  "name": "🎓 Sistema de Corrección Automática de Código",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "codigo-estudiante",
+        "options": {}
+      },
+      "id": "webhook-1",
+      "name": "📥 Webhook - Recibir Código",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "codigo-estudiante"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "studentName",
+              "value": "={{ $json.body.nombre }}",
+              "type": "string"
+            },
+            {
+              "id": "a2",
+              "name": "studentEmail",
+              "value": "={{ $json.body.email }}",
+              "type": "string"
+            },
+            {
+              "id": "a3",
+              "name": "codeContent",
+              "value": "={{ $json.body.codigo }}",
+              "type": "string"
+            },
+            {
+              "id": "a4",
+              "name": "exerciseId",
+              "value": "={{ $json.body.ejercicio_id }}",
+              "type": "string"
+            },
+            {
+              "id": "a5",
+              "name": "language",
+              "value": "={{ $json.body.lenguaje || 'javascript' }}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "set-1",
+      "name": "🔍 Extraer Datos",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "model": "deepseek-coder:6.7b",
+        "options": {
+          "temperature": 0.3,
+          "baseUrl": "https://jarvis.ieshlanz.es"
+        },
+        "prompt": "=Eres un profesor experto evaluando código de {{ $json.language }}.\n\n**Ejercicio:** {{ $json.exerciseId }}\n**Estudiante:** {{ $json.studentName }}\n\n**CÓDIGO:**\n```{{ $json.language }}\n{{ $json.codeContent }}\n```\n\n**Responde SOLO con este JSON (sin markdown, sin explicaciones):**\n\n{\n  \"puntuacion\": 8,\n  \"cumple_requisitos\": true,\n  \"aspectos_positivos\": [\n    \"Usa nomenclatura clara\",\n    \"Código bien estructurado\"\n  ],\n  \"errores_criticos\": [],\n  \"sugerencias_mejora\": [\n    \"Añadir validación de parámetros\",\n    \"Incluir comentarios JSDoc\"\n  ],\n  \"buenas_practicas\": [\n    \"Usa const/let correctamente\"\n  ],\n  \"codigo_optimizado\": \"// código mejorado si es necesario\",\n  \"comentarios_adicionales\": \"Buen trabajo en general\"\n}\n\n**Criterios (0-10 puntos):**\n- Funcionalidad: 3 pts\n- Calidad: 2 pts\n- Buenas prácticas: 2 pts\n- Manejo errores: 1 pt\n- Eficiencia: 1 pt\n- Legibilidad: 1 pt\n\n**Escala:**\n- 9-10: Excelente\n- 7-8: Muy bien\n- 5-6: Aprobado\n- 3-4: Insuficiente\n- 0-2: No funcional\n\nResponde SOLO JSON."
+      },
+      "id": "ollama-1",
+      "name": "🤖 Ollama - Análisis (DeepSeek Coder)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1.1,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parsear respuesta de Ollama\nconst ollamaResponse = $input.first().json.response || \n                       $input.first().json.output || \n                       $input.first().json.text ||\n                       $input.first().json.content;\n\nlet analysis;\n\ntry {\n  // Limpiar markdown\n  let cleanResponse = ollamaResponse.trim()\n    .replace(/```json\\n?/g, '')\n    .replace(/```\\n?/g, '')\n    .trim();\n  \n  // Extraer JSON\n  const jsonMatch = cleanResponse.match(/\\{[\\s\\S]*\\}/);\n  \n  if (jsonMatch) {\n    analysis = JSON.parse(jsonMatch[0]);\n  } else {\n    analysis = JSON.parse(cleanResponse);\n  }\n  \n  // Validar estructura\n  if (!analysis.puntuacion || !Array.isArray(analysis.aspectos_positivos)) {\n    throw new Error('JSON inválido');\n  }\n  \n} catch (error) {\n  console.error('Error parsing:', error);\n  \n  // Fallback\n  analysis = {\n    puntuacion: 5,\n    cumple_requisitos: false,\n    aspectos_positivos: [\"Código recibido correctamente\"],\n    errores_criticos: [\"Error al analizar automáticamente el código\"],\n    sugerencias_mejora: [\"Debe ser revisado manualmente por el profesor\"],\n    buenas_practicas: [],\n    codigo_optimizado: \"\",\n    comentarios_adicionales: \"⚠️ Este análisis requiere revisión manual debido a un error técnico.\"\n  };\n}\n\n// Obtener datos previos\nconst previousData = $('🔍 Extraer Datos').first().json;\n\n// Calcular campos derivados\nconst aprobado = analysis.puntuacion >= 5;\nconst necesita_revision_manual = analysis.puntuacion < 3 || !analysis.cumple_requisitos;\n\n// Retornar resultado combinado\nreturn {\n  json: {\n    // Datos estudiante\n    studentName: previousData.studentName,\n    studentEmail: previousData.studentEmail,\n    exerciseId: previousData.exerciseId,\n    language: previousData.language,\n    codeContent: previousData.codeContent,\n    \n    // Análisis IA\n    puntuacion: analysis.puntuacion,\n    cumple_requisitos: analysis.cumple_requisitos,\n    aspectos_positivos: analysis.aspectos_positivos || [],\n    errores_criticos: analysis.errores_criticos || [],\n    sugerencias_mejora: analysis.sugerencias_mejora || [],\n    buenas_practicas: analysis.buenas_practicas || [],\n    codigo_optimizado: analysis.codigo_optimizado || \"\",\n    comentarios_adicionales: analysis.comentarios_adicionales || \"\",\n    \n    // Campos calculados\n    fecha_revision: new Date().toISOString(),\n    aprobado: aprobado,\n    necesita_revision_manual: necesita_revision_manual,\n    estado: aprobado ? \"APROBADO\" : \"NECESITA_REVISION\"\n  }\n};"
+      },
+      "id": "code-1",
+      "name": "⚙️ Procesar Análisis",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond1",
+              "leftValue": "={{ $json.aprobado }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "if-1",
+      "name": "❓ ¿Aprobado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.1,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "TU_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Correcciones",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Fecha": "={{ $json.fecha_revision }}",
+            "Estudiante": "={{ $json.studentName }}",
+            "Email": "={{ $json.studentEmail }}",
+            "Ejercicio": "={{ $json.exerciseId }}",
+            "Puntuación": "={{ $json.puntuacion }}",
+            "Aprobado": "={{ $json.aprobado ? 'SÍ' : 'NO' }}",
+            "Aspectos Positivos": "={{ $json.aspectos_positivos.join(', ') }}",
+            "Errores": "={{ $json.errores_criticos.join(', ') }}",
+            "Sugerencias": "={{ $json.sugerencias_mejora.join(', ') }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "sheets-1",
+      "name": "📊 Guardar en Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1340, 200],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REEMPLAZAR_CON_TU_CREDENCIAL",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.studentEmail }}",
+        "subject": "=✅ Feedback: {{ $json.exerciseId }} - Aprobado ({{ $json.puntuacion }}/10)",
+        "emailType": "html",
+        "message": "=<!DOCTYPE html>\n<html lang=\"es\">\n<head>\n  <meta charset=\"UTF-8\">\n  <style>\n    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background: #f4f4f4; }\n    .container { max-width: 600px; margin: 20px auto; background: white; }\n    .header { background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%); color: white; padding: 30px 20px; text-align: center; }\n    .header h1 { margin: 0 0 10px 0; font-size: 28px; }\n    .content { padding: 30px; }\n    .score { font-size: 64px; font-weight: bold; color: #4CAF50; text-align: center; margin: 20px 0; text-shadow: 2px 2px 4px rgba(0,0,0,0.1); }\n    .section { margin: 25px 0; padding: 20px; border-left: 4px solid #4CAF50; background: #f9f9f9; border-radius: 0 5px 5px 0; }\n    .section h3 { margin: 0 0 15px 0; color: #4CAF50; font-size: 20px; }\n    .section ul { list-style: none; padding: 0; margin: 0; }\n    .section li { padding: 8px 0; padding-left: 25px; position: relative; }\n    .section li:before { content: '✓'; position: absolute; left: 0; color: #4CAF50; font-weight: bold; font-size: 18px; }\n    .warning-section { border-left-color: #FF9800; }\n    .warning-section h3 { color: #FF9800; }\n    .warning-section li:before { content: '💡'; }\n    .code-block { background: #2d2d2d; color: #f8f8f2; padding: 20px; border-radius: 5px; overflow-x: auto; margin: 15px 0; font-family: 'Courier New', monospace; font-size: 14px; line-height: 1.5; }\n    .badge { display: inline-block; background: #4CAF50; color: white; padding: 8px 20px; border-radius: 20px; font-weight: bold; margin: 20px 0; }\n    .footer { background: #f4f4f4; text-align: center; padding: 25px; color: #666; font-size: 14px; border-top: 1px solid #ddd; }\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"header\">\n      <h1>🎓 Feedback Automático de Código</h1>\n      <p>Sistema de Corrección con IA</p>\n    </div>\n    \n    <div class=\"content\">\n      <p>Hola <strong>{{ $json.studentName }}</strong>,</p>\n      <p>¡Enhorabuena! He revisado tu ejercicio <strong>{{ $json.exerciseId }}</strong> y has obtenido un excelente resultado.</p>\n      \n      <div class=\"score\">{{ $json.puntuacion }}/10</div>\n      <div style=\"text-align: center;\">\n        <span class=\"badge\">✅ APROBADO</span>\n      </div>\n      \n      <div class=\"section\">\n        <h3>✅ Aspectos Positivos</h3>\n        <ul>\n          {{ $json.aspectos_positivos.map(a => `<li>${a}</li>`).join('') }}\n        </ul>\n      </div>\n      \n      {{ $json.buenas_practicas && $json.buenas_practicas.length > 0 ? `\n      <div class=\"section\">\n        <h3>🎯 Buenas Prácticas Aplicadas</h3>\n        <ul>\n          ${ $json.buenas_practicas.map(p => `<li>${p}</li>`).join('') }\n        </ul>\n      </div>\n      ` : '' }}\n      \n      {{ $json.sugerencias_mejora && $json.sugerencias_mejora.length > 0 ? `\n      <div class=\"section warning-section\">\n        <h3>💡 Sugerencias para Mejorar Aún Más</h3>\n        <ul>\n          ${ $json.sugerencias_mejora.map(s => `<li>${s}</li>`).join('') }\n        </ul>\n      </div>\n      ` : '' }}\n      \n      {{ $json.codigo_optimizado && $json.codigo_optimizado.trim() ? `\n      <div class=\"section\">\n        <h3>🔧 Código Optimizado</h3>\n        <div class=\"code-block\">${ $json.codigo_optimizado.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\\n/g, '<br>') }</div>\n      </div>\n      ` : '' }}\n      \n      {{ $json.comentarios_adicionales ? `\n      <div class=\"section\">\n        <h3>📝 Comentarios Adicionales</h3>\n        <p>${ $json.comentarios_adicionales }</p>\n      </div>\n      ` : '' }}\n    </div>\n    \n    <div class=\"footer\">\n      <p><strong>Sistema de corrección automática</strong></p>\n      <p>DeepSeek Coder 6.7B (Ollama) + n8n</p>\n      <p>— Isaías, IES Politécnico Hermenegildo Lanz</p>\n    </div>\n  </div>\n</body>\n</html>"
+      },
+      "id": "gmail-1",
+      "name": "📧 Email Aprobado",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1560, 100],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REEMPLAZAR_CON_TU_CREDENCIAL",
+          "name": "Gmail"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.studentEmail }}",
+        "subject": "=⚠️ Feedback: {{ $json.exerciseId }} - Necesita Revisión ({{ $json.puntuacion }}/10)",
+        "emailType": "html",
+        "message": "=<!DOCTYPE html>\n<html lang=\"es\">\n<head>\n  <meta charset=\"UTF-8\">\n  <style>\n    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background: #f4f4f4; }\n    .container { max-width: 600px; margin: 20px auto; background: white; }\n    .header { background: linear-gradient(135deg, #FF9800 0%, #F57C00 100%); color: white; padding: 30px 20px; text-align: center; }\n    .header h1 { margin: 0 0 10px 0; font-size: 28px; }\n    .content { padding: 30px; }\n    .score { font-size: 64px; font-weight: bold; color: #FF9800; text-align: center; margin: 20px 0; }\n    .alert { background: #fff3cd; border: 2px solid #ffc107; padding: 20px; border-radius: 8px; margin: 20px 0; }\n    .section { margin: 25px 0; padding: 20px; border-left: 4px solid #FF9800; background: #f9f9f9; border-radius: 0 5px 5px 0; }\n    .section h3 { margin: 0 0 15px 0; color: #FF9800; font-size: 20px; }\n    .section ul { list-style: none; padding: 0; margin: 0; }\n    .section li { padding: 10px 0; padding-left: 30px; position: relative; border-bottom: 1px solid #eee; }\n    .section li:last-child { border-bottom: none; }\n    .error-section { border-left-color: #f44336; }\n    .error-section h3 { color: #f44336; }\n    .error-section li:before { content: '⚠️'; position: absolute; left: 0; font-size: 18px; }\n    .suggestion-section li:before { content: '💡'; position: absolute; left: 0; font-size: 18px; }\n    .positive-section { border-left-color: #4CAF50; }\n    .positive-section h3 { color: #4CAF50; }\n    .positive-section li:before { content: '✓'; position: absolute; left: 0; color: #4CAF50; font-weight: bold; font-size: 18px; }\n    .code-block { background: #2d2d2d; color: #f8f8f2; padding: 20px; border-radius: 5px; overflow-x: auto; margin: 15px 0; font-family: 'Courier New', monospace; font-size: 14px; }\n    .motivational { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 25px; border-radius: 10px; text-align: center; margin: 25px 0; font-size: 18px; font-weight: 500; }\n    .footer { background: #f4f4f4; text-align: center; padding: 25px; color: #666; font-size: 14px; border-top: 1px solid #ddd; }\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"header\">\n      <h1>🎓 Feedback de Código</h1>\n      <p>Revisión y Sugerencias de Mejora</p>\n    </div>\n    \n    <div class=\"content\">\n      <p>Hola <strong>{{ $json.studentName }}</strong>,</p>\n      <p>He revisado tu ejercicio <strong>{{ $json.exerciseId }}</strong>. Tu código muestra esfuerzo, pero necesita algunas mejoras.</p>\n      \n      <div class=\"score\">{{ $json.puntuacion }}/10</div>\n      \n      <div class=\"alert\">\n        <strong>⚠️ Estado: Necesita Revisión</strong><br>\n        <p style=\"margin-top: 10px;\">Este ejercicio requiere correcciones antes de ser aprobado. ¡Ánimo, estás en el camino correcto!</p>\n      </div>\n      \n      {{ $json.errores_criticos && $json.errores_criticos.length > 0 ? `\n      <div class=\"section error-section\">\n        <h3>⚠️ Errores a Corregir</h3>\n        <ul>\n          ${ $json.errores_criticos.map(e => `<li><strong>${e}</strong></li>`).join('') }\n        </ul>\n      </div>\n      ` : '' }}\n      \n      <div class=\"section suggestion-section\">\n        <h3>💡 Sugerencias de Mejora</h3>\n        <ul>\n          {{ $json.sugerencias_mejora.map(s => `<li>${s}</li>`).join('') }}\n        </ul>\n      </div>\n      \n      {{ $json.aspectos_positivos && $json.aspectos_positivos.length > 0 ? `\n      <div class=\"section positive-section\">\n        <h3>✅ Lo que Hiciste Bien</h3>\n        <ul>\n          ${ $json.aspectos_positivos.map(a => `<li>${a}</li>`).join('') }\n        </ul>\n      </div>\n      ` : '' }}\n      \n      {{ $json.codigo_optimizado && $json.codigo_optimizado.trim() ? `\n      <div class=\"section\">\n        <h3>🔧 Ejemplo de Código Mejorado</h3>\n        <div class=\"code-block\">${ $json.codigo_optimizado.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\\n/g, '<br>') }</div>\n      </div>\n      ` : '' }}\n      \n      <div class=\"motivational\">\n        💪<br>\n        <strong>¡No te desanimes!</strong><br>\n        El error es la mejor forma de aprender programación.\n      </div>\n    </div>\n    \n    <div class=\"footer\">\n      <p><strong>Sistema de corrección automática</strong></p>\n      <p>DeepSeek Coder 6.7B (Ollama) + n8n</p>\n      <p>— Isaías, IES Politécnico Hermenegildo Lanz</p>\n    </div>\n  </div>\n</body>\n</html>"
+      },
+      "id": "gmail-2",
+      "name": "📧 Email Suspendido",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1560, 400],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REEMPLAZAR_CON_TU_CREDENCIAL",
+          "name": "Gmail"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"success\": true, \"estudiante\": $json.studentName, \"ejercicio\": $json.exerciseId, \"puntuacion\": $json.puntuacion, \"aprobado\": $json.aprobado, \"estado\": $json.estado, \"fecha\": $json.fecha_revision } }}"
+      },
+      "id": "webhook-response-1",
+      "name": "✅ Respuesta Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1780, 300]
+    }
+  ],
+  "connections": {
+    "📥 Webhook - Recibir Código": {
+      "main": [[{ "node": "🔍 Extraer Datos", "type": "main", "index": 0 }]]
+    },
+    "🔍 Extraer Datos": {
+      "main": [
+        [
+          {
+            "node": "🤖 Ollama - Análisis (DeepSeek Coder)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🤖 Ollama - Análisis (DeepSeek Coder)": {
+      "main": [[{ "node": "⚙️ Procesar Análisis", "type": "main", "index": 0 }]]
+    },
+    "⚙️ Procesar Análisis": {
+      "main": [[{ "node": "❓ ¿Aprobado?", "type": "main", "index": 0 }]]
+    },
+    "❓ ¿Aprobado?": {
+      "main": [
+        [{ "node": "📊 Guardar en Google Sheets", "type": "main", "index": 0 }],
+        [{ "node": "📊 Guardar en Google Sheets", "type": "main", "index": 0 }]
+      ]
+    },
+    "📊 Guardar en Google Sheets": {
+      "main": [
+        [
+          { "node": "📧 Email Aprobado", "type": "main", "index": 0 },
+          { "node": "📧 Email Suspendido", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "📧 Email Aprobado": {
+      "main": [[{ "node": "✅ Respuesta Webhook", "type": "main", "index": 0 }]]
+    },
+    "📧 Email Suspendido": {
+      "main": [[{ "node": "✅ Respuesta Webhook", "type": "main", "index": 0 }]]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2026-01-14T00:00:00.000Z",
+  "versionId": "1"
+}
